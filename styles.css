@@ -30,3 +30,43 @@
 .weather-glance .section-head{margin-bottom:8px}
 @media(max-width:1050px){.stats-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:720px){.stats-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.stat-card{min-height:118px}.weather-glance{min-height:190px}.feed-glance{min-height:145px}.glance-chart{height:48px}}
+
+
+/* User-requested compact three-column layout on phones */
+@media(max-width:720px){
+  .stats-grid,
+  .dashboard-grid,
+  .three-col,
+  .view-grid{
+    grid-template-columns:repeat(3,minmax(0,1fr));
+    gap:7px;
+  }
+  .stats-grid .stat-card,
+  .dashboard-grid>.surface-card,
+  .three-col>.surface-card,
+  .view-grid>.surface-card{
+    min-width:0;
+    padding:9px 8px;
+    border-radius:11px;
+  }
+  .stats-grid .stat-card{min-height:105px}
+  .stat-top{font-size:8px;gap:3px}
+  .stat-icon{width:23px;height:23px;border-radius:7px;font-size:11px}
+  .stat-value{font-size:clamp(15px,4.7vw,20px);margin:9px 0 3px;overflow-wrap:anywhere}
+  .stat-foot{font-size:7px;line-height:1.35}
+  .section-head{gap:5px;margin-bottom:9px}
+  .section-head h2,.surface-card h2{font-size:10px}
+  .section-head p{font-size:8px}
+  .feed-glance{min-height:130px}
+  .glance-chart{height:38px}
+  .weather-glance{min-height:155px}
+  .weather-glance .weather-temp{font-size:23px}
+  .weather-glance .weather-icon{font-size:20px}
+  .weather-glance .weather-meta{gap:4px}
+  .weather-glance .weather-meta div{padding:5px 4px}
+  .weather-glance .weather-meta b{font-size:9px}
+  .weather-glance .weather-meta small{font-size:6px}
+  .chart-card{min-height:155px}
+  .chart-wrap{height:75px}
+  .quick-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
