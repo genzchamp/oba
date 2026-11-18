@@ -33,3 +33,89 @@ function drawMiniCharts(){const g=$("#feedChart");if(!g)return;const days=Array.
 
 function connection(){let online=navigator.onLine;$("#connectionText").textContent=online?"Ready":"Offline";$(".connection-pill i").style.background=online?"var(--green)":"var(--lime)"}
 async function init(){try{database=await openDB();await load();$("#todayLabel").textContent=new Date().toLocaleDateString(undefined,{weekday:"long",day:"numeric",month:"long",year:"numeric"}).toUpperCase();render();connection();drawMiniCharts();loadWeather();if(!state.farm)setTimeout(farmForm,400);if("serviceWorker"in navigator)navigator.serviceWorker.register("./sw.js").catch(()=>{})}catch(e){console.error(e);$("#viewRoot").innerHTML='<p class="notice">This browser could not open local farm storage. Please use a recent version of Chrome.</p>'}}window.addEventListener("online",connection);window.addEventListener("offline",connection);init();
+
+/* OBA Farm OS dashboard refresh — data-driven cards, clear icons and predictable Back */
+(function(){
+  const oldRender=render, oldNav=nav, oldAction=action;
+  const iconPaths={
+    home:'<path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1z"/>',
+    flock:'<path d="M7 15c-2 0-3-1.4-3-3.2S5.5 9 7.2 9c.6-2.5 2.5-4 5-4 2.4 0 4.3 1.5 4.8 3.8 1.7.1 3 1.4 3 3.1 0 1.8-1.4 3.1-3.2 3.1H7z"/><path d="M9 15v4m6-4v4M8 9 6 7m10 1 2-2"/>',
+    heart:'<path d="M20.8 8.8c0 5.5-8.8 11-8.8 11S3.2 14.3 3.2 8.8A4.8 4.8 0 0 1 12 6.1a4.8 4.8 0 0 1 8.8 2.7Z"/>',
+    feed:'<path d="M4 7h16M6 7l1 13h10l1-13M9 7V4h6v3M9 11h6m-6 4h6"/>',
+    weather:'<circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+    calendar:'<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18m-13 4h2m3 0h2m-7 3h2"/>',
+    alert:'<path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/>',
+    backup:'<path d="M12 3v12m-5-5 5 5 5-5M4 20h16"/>',
+    calculator:'<rect x="5" y="2" width="14" height="20" rx="2"/><path d="M8 6h8v4H8zm0 8h2m4 0h2m-8 4h2m4 0h2"/>',
+    plus:'<path d="M12 5v14M5 12h14"/>',
+    market:'<path d="M3 10h18l-2-6H5l-2 6Zm2 0v10h14V10M9 20v-6h6v6M3 10a3 3 0 0 0 6 0 3 3 0 0 0 6 0 3 3 0 0 0 6 0"/>',
+    book:'<path d="M4 4.5A2.5 2.5 0 0 1 6.5 2H20v18H6.5A2.5 2.5 0 0 0 4 22z"/><path d="M4 4v18m4-15h8m-8 4h8"/>',
+    back:'<path d="m15 18-6-6 6-6M9 12h12"/>',
+    dots:'<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>'
+  };
+  function ico(n){return '<svg class="oba-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'+(iconPaths[n]||iconPaths.alert)+'</svg>'}
+  function age(date){if(!date)return 'Age not set';const days=Math.max(0,Math.floor((new Date(today()+'T12:00:00')-new Date(date+'T12:00:00'))/86400000));return days+' days · '+(days<7?days+'d':days<56?(days/7).toFixed(1)+' weeks':(days/30.44).toFixed(1)+' months')}
+  function flockMortality(f){return state.records.filter(r=>r.type==='mortality'&&r.flockId===f.id).reduce((s,r)=>s+Number(r.quantity||0),0)}
+  function feedDays(){return Array.from({length:7},(_,i)=>{const d=new Date();d.setDate(d.getDate()-(6-i));const key=d.toISOString().slice(0,10);return {key,value:state.records.filter(r=>r.type==='feed'&&r.date===key).reduce((s,r)=>s+Number(r.quantity||0),0)}})}
+  function alertsFor(f){
+    const list=[];const recent=state.records.filter(r=>r.type==='mortality'&&r.date>=new Date(Date.now()-3*86400000).toISOString().slice(0,10));
+    const deaths=recent.reduce((s,r)=>s+Number(r.quantity||0),0);
+    if(deaths>0)list.push({kind:'warning',icon:'alert',title:'Mortality recorded recently',detail:deaths+' bird(s) recorded in the last 3 days. Review the affected flock.'});
+    if(f && !f.nextVaccineDate)list.push({kind:'info',icon:'calendar',title:'Vaccination schedule not set',detail:'Add a next vaccination date to this flock when its programme is confirmed.'});
+    if(!list.length)list.push({kind:'good',icon:'heart',title:'No active data-based warnings',detail:'Keep recording daily activity and vaccination dates to power accurate reminders.'});
+    return list;
+  }
+  function dashboard(){
+    const root=$('#viewRoot'),t=totals(),chosen=state.flocks.find(f=>f.id===dashboard.selectedFlock)||state.flocks[0]||null;
+    if(chosen)dashboard.selectedFlock=chosen.id;
+    const stock=chosen?Number(chosen.stocked||0):0,dead=chosen?flockMortality(chosen):0;
+    const live=chosen?Number(chosen.currentBirds??stock):0;
+    const survival=stock?Math.max(0,(stock-dead)/stock*100):0;
+    const feeds=feedDays(),todayFeed=feeds[6].value,maximum=Math.max(1,...feeds.map(x=>x.value));
+    const points=feeds.map((x,i)=>(8+i*46)+','+(44-x.value/maximum*34)).join(' ');
+    const alerts=alertsFor(chosen);
+    const mortalityRecent=state.records.filter(r=>r.type==='mortality').slice().sort((x,y)=>y.date.localeCompare(x.date)).slice(0,4);
+    root.innerHTML=
+      '<div class="farm-strip"><span>'+ico('calendar')+' <b>'+new Date().toLocaleDateString(undefined,{weekday:'short',day:'numeric',month:'short'})+'</b></span><span class="strip-time" id="farmClock"></span><span>'+ico('home')+' '+esc(state.farm?.location||'Farm location not set')+'</span></div>'+
+      '<div class="overview-heading"><div><p class="eyebrow">FARM CONTROL CENTRE</p><h1>Farm overview<span>.</span></h1><p class="subheading">A clear picture of your flock and daily operations.</p></div><div class="chicken-art" aria-label="Chicken illustration">🐔</div></div>'+
+      '<div class="flock-toolbar"><label for="activeFlockSelect">ACTIVE BATCH</label><select id="activeFlockSelect">'+(state.flocks.length?state.flocks.map(f=>'<option value="'+f.id+'" '+(chosen&&f.id===chosen.id?'selected':'')+'>'+esc(f.name)+' · '+esc(f.type)+'</option>').join(''):'<option value="">No flock registered</option>')+'</select><span class="flock-age">'+(chosen?age(chosen.stockDate):'Register a flock to begin')+'</span><button class="icon-action" data-action="add-flock" aria-label="Add flock">'+ico('plus')+'</button></div>'+
+      '<div class="stats-grid farm-kpis">'+
+        '<article class="stat-card health-card"><div class="stat-top">FLOCK HEALTH '+ico('heart')+'</div><div class="stat-value">'+(chosen?survival.toFixed(1)+'%':'—')+'</div><div class="health-meter"><span style="width:'+(chosen?survival:0)+'%"></span></div><div class="stat-foot">'+(chosen?live.toLocaleString()+' live birds · '+dead+' recorded deaths':'Add a flock to calculate survival')+'</div></article>'+
+        '<article class="stat-card feed-glance"><div class="stat-top">FEED CONSUMPTION '+ico('feed')+'</div><div class="stat-value">'+(todayFeed?todayFeed.toLocaleString()+' kg':'0 kg')+'</div><div class="stat-foot">Today · last 7 days trend</div><div class="glance-chart"><svg viewBox="0 0 300 52" role="img" aria-label="Feed usage trend for seven days"><path class="chart-gridline" d="M5 10H295 M5 27H295 M5 44H295"/><polyline class="chart-line" points="'+points+'"/></svg><div class="chart-labels">'+feeds.map(x=>'<span>'+new Date(x.key+'T12:00:00').toLocaleDateString([],{weekday:'short'})+'</span>').join('')+'</div></div></article>'+
+        '<article class="stat-card weather-glance"><div class="stat-top">FARM WEATHER '+ico('weather')+' <button class="weather-refresh" data-action="weather-refresh" aria-label="Refresh weather">↻</button></div><div id="weatherPanel"><p class="weather-loading">Loading weather…</p></div></article>'+
+      '</div>'+
+      '<div class="dashboard-grid dashboard-mid"><section class="surface-card"><div class="section-head"><div><h2>Flock overview</h2><p>Age and live bird count</p></div><button class="text-button" data-view="flocks">All flocks →</button></div>'+(state.flocks.length?state.flocks.map(f=>'<div class="activity-item"><span class="activity-mark">'+ico('flock')+'</span><div class="activity-copy"><strong>'+esc(f.name)+'</strong><small>'+esc(f.type)+' · '+age(f.stockDate)+'</small></div><b>'+Number(f.currentBirds??f.stocked).toLocaleString()+'</b></div>').join(''):empty('No flocks registered','Register a batch to see its age, stock and performance.','add-flock','Add first flock'))+'</section>'+
+      '<section class="surface-card action-panel"><div class="section-head"><div><h2>Quick actions</h2><p>Useful farm shortcuts</p></div></div><div class="action-icons"><button data-action="backup" aria-label="Download backup"><span>'+ico('backup')+'</span><small>Backup</small></button><button data-action="calc-mortality" aria-label="Open calculator"><span>'+ico('calculator')+'</span><small>Calculator</small></button><button data-action="quick-record" aria-label="Add daily record"><span>'+ico('plus')+'</span><small>Daily record</small></button><button data-action="markets" aria-label="Open markets"><span>'+ico('market')+'</span><small>Markets</small></button></div></section></div>'+
+      '<section class="surface-card alert-panel"><div class="section-head"><div><h2>'+ico('alert')+' Farm notifications</h2><p>Generated from the records currently saved on this device</p></div><button class="text-button" data-view="alerts">Alert centre →</button></div><div class="alert-list">'+alerts.map(x=>'<div class="farm-alert '+x.kind+'"><span>'+ico(x.icon)+'</span><div><strong>'+x.title+'</strong><small>'+x.detail+'</small></div></div>').join('')+'</div></section>'+
+      '<section class="surface-card recent-panel"><div class="section-head"><div><h2>Recent activities</h2><p>Latest entries from your farm journal</p></div><button class="text-button" data-view="records">View all →</button></div>'+(state.records.length?[...state.records].sort((x,y)=>(y.createdAt||y.date).localeCompare(x.createdAt||x.date)).slice(0,5).map(r=>'<div class="activity-item"><span class="activity-mark">'+ico(r.type==='feed'?'feed':r.type==='mortality'?'alert':r.type==='water'?'weather':'book')+'</span><div class="activity-copy"><strong>'+nameType(r.type)+'</strong><small>'+esc(r.date)+' · '+esc(r.note||'No note')+'</small></div><b>'+esc(r.quantity)+' '+esc(r.unit)+'</b></div>').join(''):empty('No activities yet','Feed, water, mortality and other entries will appear here.','quick-record','Create a record'))+
+      '<div class="journal-link"><button class="button button-primary" data-view="records">'+ico('book')+' Open complete journal</button></div></section>';
+    const select=$('#activeFlockSelect');if(select)select.addEventListener('change',()=>{dashboard.selectedFlock=select.value;dashboard()});
+    updateClock();if(!dashboard.clock)dashboard.clock=setInterval(updateClock,30000);
+    drawMiniCharts();loadWeather();
+  }
+  function updateClock(){const el=$('#farmClock');if(el)el.textContent=new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});}
+  dashboard.selectedFlock=null;dashboard.clock=null;
+  render=function(){oldRender();if(state.view==='home')dashboard();syncBackButton();};
+  function syncBackButton(){const bar=$('.topbar');if(!bar)return;let b=$('#obaBackHome');if(!b){b=document.createElement('button');b.id='obaBackHome';b.className='icon-button';b.type='button';b.setAttribute('aria-label','Back to dashboard');b.innerHTML=ico('back');bar.insertBefore(b,bar.firstChild);}b.style.display=state.view==='home'?'none':'grid';}
+  nav=function(v,fromPop){if(v!=='home'&&!fromPop){try{history.pushState({obaView:v},'','#'+v)}catch(e){}}state.view=v;oldNav(v);syncBackButton();};
+  action=function(a){if(a==='go-home'){nav('home');return;}if(a==='markets'){say('Markets is planned for a future update. No listings are available yet.');return;}oldAction(a);};
+  document.addEventListener('click',e=>{if(e.target.closest('#obaBackHome')){nav('home');return;}});
+  window.addEventListener('popstate',()=>{nav('home',true);});
+  const originalTitle=document.title;
+  document.addEventListener('keydown',e=>{if(e.key==='Escape'&&state.view!=='home'&&!$('#appDialog')?.open){nav('home');}});
+  const style=document.createElement('style');style.textContent=String.raw`
+  .oba-icon{width:17px;height:17px;display:inline-block;vertical-align:middle;flex:none}
+  .farm-strip{display:flex;align-items:center;gap:clamp(9px,2vw,24px);flex-wrap:wrap;padding:9px 12px;border:1px solid var(--line);border-radius:11px;background:var(--panel);font-size:10px;color:var(--muted);margin-bottom:19px}.farm-strip span{display:flex;align-items:center;gap:6px}.farm-strip b{color:var(--text)}.strip-time{font-variant-numeric:tabular-nums}
+  .overview-heading{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}.overview-heading h1{font-size:clamp(22px,3vw,30px)}.chicken-art{font-size:43px;filter:drop-shadow(0 8px 12px #0004);padding-right:12px}
+  .flock-toolbar{display:flex;align-items:center;gap:10px;padding:10px 12px;margin-bottom:13px;background:var(--panel);border:1px solid var(--line);border-radius:12px;min-width:0}.flock-toolbar label{font-size:8px;letter-spacing:.12em;color:var(--dim);font-weight:800}.flock-toolbar select{flex:1;min-width:70px;background:transparent;border:0;color:var(--text);font-size:11px;font-weight:700;outline:none}.flock-toolbar select option{background:#13231f}.flock-age{font-size:9px;color:var(--muted);white-space:nowrap}.icon-action{border:1px solid var(--line);background:var(--panel2);color:var(--green);width:30px;height:30px;border-radius:8px;display:grid;place-items:center}
+  .farm-kpis{grid-template-columns:repeat(3,minmax(0,1fr));gap:11px;margin-bottom:13px}.farm-kpis .stat-card{min-width:0}.farm-kpis .stat-top{display:flex;justify-content:space-between;align-items:center}.health-card .stat-value{margin-bottom:7px}.health-meter{height:7px;border-radius:20px;background:#ffffff16;overflow:hidden;margin:0 0 9px}.health-meter span{display:block;height:100%;border-radius:20px;background:linear-gradient(90deg,#43c98c,#b6e875)}.farm-kpis .weather-glance{min-height:0}
+  .dashboard-mid{grid-template-columns:repeat(2,minmax(0,1fr));margin-bottom:13px}.dashboard-mid>.surface-card{min-width:0}.action-icons{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}.action-icons button{min-width:0;display:grid;justify-items:center;gap:7px;padding:11px 3px;background:var(--panel);border:1px solid var(--line);border-radius:11px;color:var(--text)}.action-icons button>span{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;background:#55d99f1a;color:var(--green)}.action-icons .oba-icon{width:19px;height:19px}.action-icons small{font-size:9px;color:var(--muted)}
+  .alert-panel{margin-bottom:13px}.alert-panel .section-head h2 .oba-icon{margin-right:5px;color:var(--green)}.alert-list{display:grid;gap:8px}.farm-alert{display:flex;gap:10px;align-items:flex-start;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--panel)}.farm-alert>span{color:var(--green)}.farm-alert.warning>span{color:#e7b56c}.farm-alert strong,.farm-alert small{display:block}.farm-alert strong{font-size:10px}.farm-alert small{font-size:9px;color:var(--muted);line-height:1.45;margin-top:3px}.farm-alert.good{border-color:#4ecb8b38}.farm-alert.warning{border-color:#e7b56c55}.recent-panel{margin-bottom:20px}.journal-link{display:flex;justify-content:flex-end;margin-top:13px}.journal-link .button{display:flex;align-items:center;gap:7px}
+  @media(max-width:720px){.content{padding-top:15px}.farm-strip{gap:7px 12px;padding:8px;font-size:8px;margin-bottom:13px}.farm-strip .oba-icon{width:13px;height:13px}.overview-heading{margin-bottom:9px}.overview-heading .subheading{font-size:9px}.chicken-art{font-size:32px;padding:0}.flock-toolbar{gap:6px;padding:8px}.flock-toolbar label{font-size:7px}.flock-toolbar select{font-size:9px}.flock-age{font-size:7px}.farm-kpis{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}.farm-kpis .stat-card{padding:9px 7px;min-height:142px}.farm-kpis .stat-top{font-size:7px}.farm-kpis .stat-top .oba-icon{width:13px;height:13px}.farm-kpis .stat-value{font-size:clamp(15px,4.4vw,20px)}.farm-kpis .stat-foot{font-size:7px}.farm-kpis .weather-glance{min-height:142px}.farm-kpis .weather-glance .weather-temp{font-size:20px}.farm-kpis .weather-glance .weather-meta{grid-template-columns:1fr 1fr}.farm-kpis .weather-glance .weather-meta div{padding:4px 3px}.farm-kpis .weather-glance .weather-meta b{font-size:8px}.farm-kpis .weather-glance .weather-meta small{font-size:6px}.dashboard-mid{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}.dashboard-mid>.surface-card{padding:9px 7px}.dashboard-mid .section-head h2{font-size:9px}.dashboard-mid .section-head p{font-size:7px}.dashboard-mid .activity-item{gap:5px}.dashboard-mid .activity-copy strong{font-size:8px}.dashboard-mid .activity-copy small{font-size:7px}.dashboard-mid .activity-item>b{font-size:8px}.action-icons{gap:4px}.action-icons button{padding:8px 1px;gap:5px}.action-icons button>span{width:28px;height:28px}.action-icons small{font-size:7px}.alert-panel,.recent-panel{padding:11px 9px}.farm-alert{padding:8px;gap:7px}.farm-alert strong{font-size:9px}.farm-alert small{font-size:8px}.journal-link .button{font-size:9px}}
+  @media(max-width:370px){.flock-toolbar{flex-wrap:wrap}.flock-toolbar label{width:100%}.flock-age{white-space:normal}.farm-kpis .stat-card{padding:7px 5px}.farm-kpis .stat-top{font-size:6px}}
+`;
+  document.head.appendChild(style);
+  document.title=originalTitle;
+  syncBackButton();
+  if(state.view==='home')dashboard();
+})();
