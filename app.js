@@ -54,6 +54,10 @@ async function init(){try{database=await openDB();await load();$("#todayLabel").
     dots:'<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>'
   };
   function ico(n){return '<svg class="oba-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'+(iconPaths[n]||iconPaths.alert)+'</svg>'}
+  quick=function(icon,title,desc,action){const key=action==='backup'?'backup':action==='tools'?'calculator':action==='add-flock'?'flock':'book';return '<button class="quick-action" data-action="'+action+'"><span class="quick-symbol">'+ico(key)+'</span><span><strong>'+title+'</strong><small>'+desc+'</small></span></button>'};
+  tool=function(icon,title,desc,action){const key=action==='calc-mortality'?'heart':action==='calc-feed'?'feed':action==='calc-water'?'weather':action==='calc-profit'?'market':'book';return '<button class="surface-card tool-card" data-action="'+action+'"><span class="stat-icon">'+ico(key)+'</span><h3>'+title+'</h3><p>'+desc+'</p></button>'};
+  empty=function(title,desc,action,label){return '<div class="empty-state"><div class="empty-icon">'+ico('flock')+'</div><h3>'+title+'</h3><p>'+desc+'</p>'+(action?'<button class="button button-primary" data-action="'+action+'">'+label+'</button>':'')+'</div>'};
+
   function age(date){if(!date)return 'Age not set';const days=Math.max(0,Math.floor((new Date(today()+'T12:00:00')-new Date(date+'T12:00:00'))/86400000));return days+' days · '+(days<7?days+'d':days<56?(days/7).toFixed(1)+' weeks':(days/30.44).toFixed(1)+' months')}
   function flockMortality(f){return state.records.filter(r=>r.type==='mortality'&&r.flockId===f.id).reduce((s,r)=>s+Number(r.quantity||0),0)}
   function feedDays(){return Array.from({length:7},(_,i)=>{const d=new Date();d.setDate(d.getDate()-(6-i));const key=d.toISOString().slice(0,10);return {key,value:state.records.filter(r=>r.type==='feed'&&r.date===key).reduce((s,r)=>s+Number(r.quantity||0),0)}})}
