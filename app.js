@@ -119,3 +119,9 @@ async function init(){try{database=await openDB();await load();$("#todayLabel").
   syncBackButton();
   if(state.view==='home')dashboard();
 })();
+
+/* Hardware/browser Back from an open dialog also returns to the dashboard. */
+document.addEventListener("DOMContentLoaded",()=>{
+  const dlg=document.querySelector("#appDialog");
+  if(dlg)dlg.addEventListener("cancel",e=>{e.preventDefault();dlg.close();nav("home");});
+});
