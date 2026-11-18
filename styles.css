@@ -70,3 +70,5 @@
   .chart-wrap{height:75px}
   .quick-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
+
+/* Dashboard refresh v1: three essential metrics, two balanced panels and full-width alerts */
